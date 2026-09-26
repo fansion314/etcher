@@ -121,3 +121,13 @@ secrets/WINDOWS_SIGNING.pfx
 #local development
 .yalc
 yalc.lock
+
+# dnr build products
+dnr/.build/
+dnr/native/mountutils/*.so
+dnr/native/tests/test-native
+packaging/aur/etcher-dnr/src/
+packaging/aur/etcher-dnr/pkg/
+*.pkg.tar.zst
+packaging/aur/etcher-dnr/etcher-*.tar.gz
+!packaging/aur/etcher-dnr/etcher-dnr-port.tar.gz

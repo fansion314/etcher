@@ -1,0 +1,114 @@
+// Real dnr + SDK tests. All write targets are new regular files in a temp dir.
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const { createRequire } = require('node:module');
+const { promisify } = require('node:util');
+const { gzipSync } = require('node:zlib');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(globalThis.etcherTestRoot || process.argv[2] || 'out/dnr');
+const appRequire = createRequire(path.join(root, 'worker.cjs'));
+const sdk = appRequire('etcher-sdk');
+const mount = appRequire('mountutils');
+const sdkRequire = createRequire(appRequire.resolve('etcher-sdk'));
+const direct = sdkRequire('@ronomon/direct-io');
+async function main() {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'etcher-dnr-test-'));
+  try {
+    for (const alignment of [512, 4096, 65536]) {
+      const buffer = direct.getAlignedBuffer(8192, alignment);
+      assert.equal(Deno.UnsafePointer.value(Deno.UnsafePointer.of(buffer)) % BigInt(alignment), 0n);
+      buffer.fill(0x5a);
+      assert.equal(buffer[8191], 0x5a);
+    }
+    console.log('PASS aligned buffers');
+    const directPath = path.join(temporary, 'direct-io.img');
+    await fs.writeFile(directPath, Buffer.alloc(8192));
+    const handle = await fs.open(directPath, require('node:fs').constants.O_DIRECT | require('node:fs').constants.O_RDWR);
+    const directBuffer = direct.getAlignedBuffer(8192, 4096);
+    directBuffer.fill(0x37);
+    await handle.write(directBuffer, 0, directBuffer.length, 0);
+    await handle.sync();
+    directBuffer.fill(0);
+    await handle.read(directBuffer, 0, directBuffer.length, 0);
+    await handle.close();
+    assert.ok(directBuffer.every(byte => byte === 0x37));
+    console.log('PASS actual O_DIRECT file write, fsync and read');
+    await assert.rejects(promisify(mount.unmountDisk)(path.join(temporary, 'absent')), /No such file/);
+    await assert.rejects(promisify(mount.eject)('/dev/null'), /Not a block device/);
+    await assert.rejects(promisify(mount.unmountDisk)('/dev/a\0b'), /NUL/);
+    console.log('PASS FFI loading and non-destructive error paths');
+    const payload = Buffer.alloc(2 * 1024 * 1024);
+    for (let i = 0; i < payload.length; i++) payload[i] = (i * 17 + (i >> 12)) % 251;
+    const raw = path.join(temporary, 'source.img');
+    await fs.writeFile(raw, payload);
+    await fs.writeFile(raw + '.gz', gzipSync(payload));
+    const xz = spawnSync('xz', ['-c', raw]);
+    assert.equal(xz.status, 0, xz.stderr.toString());
+    await fs.writeFile(raw + '.xz', xz.stdout);
+    const archives = spawnSync('python3', ['-c', 'import sys,zipfile,bz2; p=sys.argv[1]; z=zipfile.ZipFile(p+".zip","w",zipfile.ZIP_DEFLATED); z.write(p,"image.img"); z.close(); open(p+".bz2","wb").write(bz2.compress(open(p,"rb").read()))', raw]);
+    assert.equal(archives.status, 0, archives.stderr.toString());
+    for (const extension of ['', '.gz', '.xz', '.zip', '.bz2']) {
+      const paths = [path.join(temporary, 'destination-a.img'), path.join(temporary, 'destination-b.img')];
+      for (const file of paths) await fs.writeFile(file, Buffer.alloc(payload.length));
+      const progress = [];
+      const failures = [];
+      const result = await sdk.multiWrite.decompressThenFlash({
+        source: new sdk.sourceDestination.File({path: raw + extension}),
+        destinations: paths.map(file => new sdk.sourceDestination.File({path: file, write: true})),
+        verify: true, trim: false, decompressFirst: false, numBuffers: 2,
+        onProgress: p => progress.push(p.type), onFail: (_destination, error) => failures.push(error),
+      });
+      assert.equal(result.failures.size, 0);
+      assert.deepEqual(failures, []);
+      assert.equal(result.bytesWritten, payload.length);
+      for (const file of paths) assert.deepEqual(await fs.readFile(file), payload);
+      console.log(`PASS SDK write + verify, two destinations, ${extension || 'raw'}`);
+    }
+    class CorruptedDestination extends sdk.sourceDestination.File {
+      async read(buffer, offset, length, position) {
+        const result = await super.read(buffer, offset, length, position);
+        if (result.bytesRead) buffer[offset] ^= 0xff;
+        return result;
+      }
+    }
+    const corruptPath = path.join(temporary, 'corrupt.img');
+    await fs.writeFile(corruptPath, Buffer.alloc(payload.length));
+    const verification = await sdk.multiWrite.decompressThenFlash({
+      source: new sdk.sourceDestination.File({path: raw}),
+      destinations: [new CorruptedDestination({path: corruptPath, write: true})],
+      verify: true, trim: false, decompressFirst: false, numBuffers: 2,
+      onProgress() {}, onFail() {},
+    });
+    assert.equal(verification.failures.size, 1);
+    console.log('PASS verification rejects corrupted destination reads');
+    const server = Deno.serve({hostname: '127.0.0.1', port: 0, onListen() {}}, request => {
+      const headers = {'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Content-Length': String(payload.length)};
+      if (request.method === 'HEAD') return new Response(null, {headers});
+      const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get('Range') || '');
+      if (!range) return new Response(payload, {headers});
+      const start = Number(range[1]), end = range[2] ? Math.min(Number(range[2]), payload.length - 1) : payload.length - 1;
+      if (start > end) return new Response(null, {status: 416});
+      return new Response(payload.subarray(start, end + 1), {status: 206, headers: {...headers,
+        'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${payload.length}`}});
+    });
+    try {
+      const destinationPath = path.join(temporary, 'http.img');
+      await fs.writeFile(destinationPath, Buffer.alloc(payload.length));
+      const result = await sdk.multiWrite.decompressThenFlash({
+        source: new sdk.sourceDestination.Http({url: `http://127.0.0.1:${server.addr.port}/image.img`}),
+        destinations: [new sdk.sourceDestination.File({path: destinationPath, write: true})],
+        verify: true, trim: false, decompressFirst: false, numBuffers: 2,
+        onProgress() {}, onFail() {},
+      });
+      assert.equal(result.failures.size, 0);
+      assert.deepEqual(await fs.readFile(destinationPath), payload);
+      console.log('PASS HTTP range source write and verification');
+    } finally { await server.shutdown(); }
+    const drives = await sdkRequire('drivelist').list();
+    assert.ok(Array.isArray(drives));
+    console.log(`PASS real device enumeration (${drives.length} devices, read only)`);
+  } finally { await fs.rm(temporary, {recursive: true, force: true}); }
+}
+main().catch(error => {console.error(error); process.exitCode = 1;});

@@ -1,0 +1,16 @@
+packages:
+  - '.'
+overrides:
+  mountutils: file:./native/mountutils
+  '@ronomon/direct-io': file:./native/direct-io
+  unbzip2-stream: https://codeload.github.com/balena-io-modules/unbzip2-stream/tar.gz/4a54f56a25b58950f9e4277c56db2912d62242e7
+blockExoticSubdeps: false
+allowBuilds:
+  drivelist: true
+  lzma-native: true
+  usb: true
+  xxhash-addon: true
+  esbuild: true
+  core-js: false
+  es5-ext: false
+  styled-components: false

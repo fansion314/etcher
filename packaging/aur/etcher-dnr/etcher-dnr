@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/dnr --backend "${ETCHER_DNR_BACKEND:-auto}" /usr/lib/etcher-dnr/etcher.dnp "$@"
