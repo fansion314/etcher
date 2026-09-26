@@ -125,6 +125,7 @@ yalc.lock
 # dnr build products
 dnr/.build/
 dnr/native/mountutils/*.so
+dnr/native/direct-io/*.so
 dnr/native/tests/test-native
 packaging/aur/etcher-dnr/src/
 packaging/aur/etcher-dnr/pkg/

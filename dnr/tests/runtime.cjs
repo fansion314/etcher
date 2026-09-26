@@ -35,6 +35,40 @@ async function main() {
     await handle.close();
     assert.ok(directBuffer.every(byte => byte === 0x37));
     console.log('PASS actual O_DIRECT file write, fsync and read');
+    const constants = require('node:fs').constants;
+    const exclusivePath = path.join(temporary, 'exclusive.img');
+    await fs.writeFile(exclusivePath, Buffer.alloc(8192));
+    async function descriptorsFor(file) {
+      const links = await Promise.all((await fs.readdir('/proc/self/fd')).map(async fd => {
+        try { return await fs.readlink(`/proc/self/fd/${fd}`); } catch { return ''; }
+      }));
+      return links.filter(link => link === file).length;
+    }
+    const flags = constants.O_RDWR | constants.O_DIRECT | constants.O_EXCL;
+    const exclusive = await direct.open(exclusivePath, flags);
+    assert.equal(await descriptorsFor(exclusivePath), 2, 'native claim and managed handle remain open together');
+    directBuffer.fill(0x62);
+    await exclusive.write(directBuffer, 0, directBuffer.length, 0);
+    await exclusive.sync();
+    directBuffer.fill(0);
+    await exclusive.read(directBuffer, 0, directBuffer.length, 0);
+    assert.ok(directBuffer.every(byte => byte === 0x62));
+    // Numeric fd consumers must also see a genuine Deno-managed descriptor.
+    const stream = require('node:fs').createWriteStream(null, {fd: exclusive.fd, autoClose: false});
+    await new Promise((resolve, reject) => { stream.once('error', reject); stream.end(directBuffer, resolve); });
+    assert.equal(await descriptorsFor(exclusivePath), 2);
+    await Promise.all([exclusive.close(), exclusive.close()]);
+    assert.equal(await descriptorsFor(exclusivePath), 0, 'close releases both descriptors exactly once');
+    await assert.rejects(direct.open(exclusivePath, flags | constants.O_CREAT), {code: 'EEXIST'});
+    await assert.rejects(direct.open(exclusivePath, flags | constants.O_TRUNC), {code: 'EINVAL'});
+    await assert.rejects(direct.open(exclusivePath + '.absent', flags), {code: 'ENOENT'});
+    await assert.rejects(direct.open(exclusivePath + '\0suffix', flags), /NUL/);
+    const originalOpen = fs.open;
+    fs.open = async () => { throw new Error('simulated managed open failure'); };
+    try { await assert.rejects(direct.open(exclusivePath, flags), /simulated managed open failure/); }
+    finally { fs.open = originalOpen; }
+    assert.equal(await descriptorsFor(exclusivePath), 0, 'failed managed open releases native claim');
+    console.log('PASS O_EXCL lifetime, direct read/write/sync, WriteStream, close and failure cleanup');
     await assert.rejects(promisify(mount.unmountDisk)(path.join(temporary, 'absent')), /No such file/);
     await assert.rejects(promisify(mount.eject)('/dev/null'), /Not a block device/);
     await assert.rejects(promisify(mount.unmountDisk)('/dev/a\0b'), /NUL/);
@@ -43,6 +77,35 @@ async function main() {
     for (let i = 0; i < payload.length; i++) payload[i] = (i * 17 + (i >> 12)) % 251;
     const raw = path.join(temporary, 'source.img');
     await fs.writeFile(raw, payload);
+    // Exercise the SDK's real BlockDevice flags and streams on a temporary file.
+    // Substitute only unmount: no real device is opened or modified by this test.
+    const blockPath = path.join(temporary, 'block-destination.img');
+    await fs.writeFile(blockPath, Buffer.alloc(payload.length));
+    const originalUnmount = mount.unmountDisk;
+    mount.unmountDisk = (device, callback) => { assert.equal(device, blockPath); callback(null); };
+    let blockReads = 0;
+    class TestBlockDevice extends sdk.sourceDestination.BlockDevice {
+      async read(...args) {
+        assert.equal(await descriptorsFor(blockPath), 2, 'exclusive descriptor retained during verification');
+        blockReads++;
+        return super.read(...args);
+      }
+    }
+    try {
+      const block = new TestBlockDevice({drive: {raw: blockPath, device: blockPath,
+        size: payload.length, blockSize: 512, isReadOnly: false}, write: true, keepOriginal: true});
+      assert.equal(block.getOpenFlags(), flags);
+      const result = await sdk.multiWrite.decompressThenFlash({
+        source: new sdk.sourceDestination.File({path: raw}), destinations: [block],
+        verify: true, trim: false, decompressFirst: false, numBuffers: 2,
+        onProgress() {}, onFail() {},
+      });
+      assert.equal(result.failures.size, 0);
+      assert.ok(blockReads > 0);
+      assert.equal(await descriptorsFor(blockPath), 0);
+      assert.deepEqual(await fs.readFile(blockPath), payload);
+    } finally { mount.unmountDisk = originalUnmount; }
+    console.log('PASS SDK BlockDevice O_RDWR | O_DIRECT | O_EXCL write and verification on temporary file');
     await fs.writeFile(raw + '.gz', gzipSync(payload));
     const xz = spawnSync('xz', ['-c', raw]);
     assert.equal(xz.status, 0, xz.stderr.toString());

@@ -130,11 +130,27 @@ Set `ejectOnSuccess` to false in the configuration to retain the device.
 with a Deno pointer-based aligned slice. Linux `O_DIRECT` remains enabled. This
 adapter is Linux-only; it does not pretend to implement macOS `F_NOCACHE`.
 
+The packaged SDK delegates its file opens to this adapter. Deno 2.9.7 treats
+numeric `O_EXCL` without `O_CREAT` as creation and incorrectly returns `EEXIST`.
+`native/exclusive-open.c` opens with the original flags, including `O_EXCL`, and
+retains that descriptor until the SDK closes its FileHandle. The adapter opens
+`/proc/self/fd/<native-fd>` without `O_EXCL` to obtain a real Deno FileHandle for
+read/write, streams and sync. The native descriptor retains the kernel block
+device claim throughout writing and verification; it is also closed when the
+managed open fails. Busy devices fail without a nonexclusive fallback. This
+requires procfs. Linux exclusive claims protect against mounts and other exclusive
+openers; they do not prevent arbitrary nonexclusive raw-device writes.
+
 ## Verification boundaries
 
 `tests/runtime.cjs` runs real SDK operations under dnr, with raw/gzip/xz/ZIP/bzip2 and HTTP sources,
 two temporary regular-file destinations, verification, actual `O_DIRECT` file
 I/O, aligned buffers, FFI errors, and read-only enumeration of real devices.
+It also exercises SDK `BlockDevice` writing and verification against a temporary
+file with its real `O_RDWR | O_DIRECT | O_EXCL` flags, checks the exclusive
+descriptor remains open during verification, and tests open-failure cleanup.
+`native/tests/test-exclusive-open.c` checks unchanged exclusive flags, busy
+error propagation and refusal to create or truncate destinations.
 `native/tests/test-native.c` exercises the native implementation with substituted
 kernel/D-Bus boundaries, including busy devices, escaped paths, nested mounts,
 system-volume refusal, eject versus power-off, shared readers and error propagation.

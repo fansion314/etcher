@@ -1,7 +1,7 @@
 # Maintainer: Peilin Fan <peilin.fan@foxmail.com>
 pkgname=etcher-dnr
 pkgver=2.1.7
-pkgrel=1
+pkgrel=2
 pkgdesc='Etcher image flasher using shared dnr and system desktop libraries (experimental Linux port)'
 arch=('x86_64')
 url='https://github.com/balena-io/etcher'
@@ -15,7 +15,7 @@ _commit=bfcfafd32e3628fccf924c8d17fcdb56e4ade989
 source=("etcher-${_commit}.tar.gz::https://codeload.github.com/balena-io/etcher/tar.gz/${_commit}"
         'etcher-dnr-port.tar.gz' 'etcher-dnr' 'etcher-dnr.desktop')
 sha256sums=('ca4983d81dbe4cdd5f04b93b806fe177a32395bd85a9c4b12f44ef7a26167f35'
-            '7ae449e359e77125b7f97bb81cbe2c11e2011824882bfed15d727a73f89660a7'
+            'e929011268681b2d265b708d0e6bf01586782080a33370f34a989ce89a7447ec'
             'c3098db5b878a1a4624e30d9434fcbb484fbbe517c03a718d7d518a9371bf83f'
             '564682b555b50bfa9e26bc9afd2faaa51a9fec7854f05a64ceb9b75fd266a674')
 

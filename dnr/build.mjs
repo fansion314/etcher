@@ -15,6 +15,8 @@ const pkgFlags = spawnSync('pkg-config', ['--cflags', '--libs', 'mount', 'gio-2.
 if (pkgFlags.status) throw new Error(pkgFlags.stderr);
 run('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-shared',
   'native/mountutils.c', '-o', 'native/mountutils/libetcher-mountutils.so', ...pkgFlags.stdout.trim().split(/\s+/)]);
+run('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-shared',
+  'native/exclusive-open.c', '-o', 'native/direct-io/libetcher-exclusive-open.so']);
 
 const source = join(here, '.build/src');
 await fs.mkdir(source, {recursive: true});
@@ -98,8 +100,15 @@ for (const [name, sourceName] of [['mountutils', 'mountutils'], ['@ronomon/direc
     if (metadata.name !== name) continue;
     await fs.copyFile(join(here, 'native', sourceName, 'index.cjs'), join(target, 'index.cjs'));
     if (name === 'mountutils') await fs.copyFile(join(here, 'native/mountutils/libetcher-mountutils.so'), join(target, 'libetcher-mountutils.so'));
+    if (name === '@ronomon/direct-io') await fs.copyFile(join(here, 'native/direct-io/libetcher-exclusive-open.so'), join(target, 'libetcher-exclusive-open.so'));
   }
 }
+// Adapt only the packaged SDK. The helper delegates ordinary files unchanged.
+const sdkFile = join(modules, 'etcher-sdk/build/source-destination/file.js');
+const sdkCode = await fs.readFile(sdkFile, 'utf8');
+const sdkOpen = 'fs_1.promises.open(this.path, this.getOpenFlags())';
+if (sdkCode.split(sdkOpen).length !== 2) throw new Error('Review SDK exclusive-open adaptation');
+await fs.writeFile(sdkFile, sdkCode.replace(sdkOpen, 'require("@ronomon/direct-io").open(this.path, this.getOpenFlags())'));
 await fs.writeFile(join(output, 'package.json'), JSON.stringify({name: 'etcher-dnr', version: upstreamPackage.version, type: 'module', license: 'Apache-2.0'}));
 await fs.copyFile(join(repo, 'LICENSE'), join(output, 'LICENSE'));
 await fs.copyFile(join(here, 'runtime/bootstrap.mjs'), join(output, 'bootstrap.mjs'));
