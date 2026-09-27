@@ -12,8 +12,8 @@ package. Both recipes depend on dnr 0.4.1 or newer and WebKitGTK; CEF is
 optional. They conflict with each other and with the conventional Etcher
 packages. Neither recipe has been submitted to the AUR yet.
 
-For the current source release, use tag `v2.1.7-dnr.4`. The tag matches
-`pkgver=2.1.7` and `pkgrel=4` in both recipes. `dnr/update-aur.mjs` refreshes
+For the current source release, use tag `v2.1.7-dnr.5`. The tag matches
+`pkgver=2.1.7` and `pkgrel=5` in both recipes. `dnr/update-aur.mjs` refreshes
 the source overlay, checksums, and both `.SRCINFO` files in an Arch environment.
 The tagged GitHub Actions workflow builds the source recipe and validates the
 `-bin` recipe before publishing a release asset for it to download.
