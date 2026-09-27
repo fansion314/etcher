@@ -165,14 +165,14 @@ run('dnc', [output, '--entry', 'bootstrap.mjs', '--app-id', 'io.balena.etcher.dn
   '--window-icon', join(repo, 'assets/icon.png'), '--package-config', join(here, '.build/native.json'),
   ...excluded, '-o', join(bundle, 'etcher.dnp'), '--force']);
 if (isMac) {
-  const runtimePath = process.env.DNR_RUNTIME_PATH || spawnSync('which', ['dnr'], {encoding: 'utf8'}).stdout?.trim();
-  if (!runtimePath?.startsWith('/')) throw new Error('Set DNR_RUNTIME_PATH to the installed absolute dnr path');
+  const runtimePath = process.env.DNR_RUNTIME_PATH || 'dnr';
+  if (runtimePath !== 'dnr' && !runtimePath.startsWith('/')) throw new Error('DNR_RUNTIME_PATH must be dnr or an absolute path');
   const desktopManifest = join(here, '.build/desktop-macos.json');
   await fs.writeFile(desktopManifest, JSON.stringify({
     appId: 'io.balena.etcher.dnr', name: 'balenaEtcher', version: upstreamPackage.version,
     description: upstreamPackage.description, entry: 'bootstrap.mjs',
     windowIcon: '../../assets/icon.png',
-    macos: {icon: '../../assets/icon.icns', runtimePath},
+    macos: {icon: '../../assets/icon.icns', runtimePath, minimumSystemVersion: '15.0'},
   }, null, 2));
   run('dnc', [output, '--desktop-manifest', desktopManifest, '--package-config', join(here, '.build/native.json'),
     ...excluded, '--target', 'macos', '-o', join(bundle, 'balenaEtcher.app'), '--force']);

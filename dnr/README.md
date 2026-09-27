@@ -27,7 +27,7 @@ dnr --backend system-cef out/bundle/etcher.dnp /absolute/path/image.img
 ```
 
 On macOS arm64, the build also writes `out/bundle/balenaEtcher.app`. Its thin
-launcher refers to the `dnr` executable found on `PATH` during the build; set
+launcher discovers `dnr` at launch time, including Homebrew locations with Finder’s minimal PATH; set
 `DNR_RUNTIME_PATH=/absolute/path/to/dnr` to select a different installed shared
 runtime. The bundle is signed locally with an ad-hoc signature. It does not
 embed dnr or provide Developer ID signing or notarization.
@@ -157,3 +157,23 @@ then runs the SDK/FFI tests from the archive with an isolated cache.
 worker startup, then exits. Run separately for `system-cef` and `webview`.
 These checks do not substitute for authorizing a disposable physical USB drive
 and exercising a real privileged write, unplug and safe-eject cycle.
+
+## Homebrew macOS releases
+
+Apple Silicon, macOS 15+: `brew install --cask fansion314/dnr/etcher-dnr`.
+The shared tap is [fansion314/homebrew-dnr](https://github.com/fansion314/homebrew-dnr).
+It installs dnr as a dependency and installs `balenaEtcher.app` in Applications.
+The personal cask verifies the ad-hoc signature and removes quarantine only from
+this app. It does not provide Apple notarization or disable Gatekeeper.
+
+Use dnc from Homebrew `dnr 0.4.2_1` or later to build portable macOS launchers.
+`release-dnr-macos.yml` builds/tests on `macos-15` for DNR tags. To add a new
+macOS revision without moving an existing tag:
+
+```sh
+gh workflow run release-dnr-macos.yml --ref main -f release_tag=v2.1.7-dnr.4 -f package_revision=1
+```
+
+The job publishes a tar.gz, SHA-256 and build provenance; it refuses to replace
+existing assets. The central tap verifies and install-tests new releases before
+updating, normally on its twice-hourly schedule. Linux packaging is unchanged.

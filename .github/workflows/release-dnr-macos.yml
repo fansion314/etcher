@@ -1,0 +1,80 @@
+name: Release DNR macOS package
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+-dnr.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing DNR release tag; publishes new macOS assets without changing the tag'
+        required: true
+        type: string
+      package_revision:
+        description: 'New immutable macOS package revision'
+        default: '1'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: dnr-macos-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+  PACKAGE_REVISION: ${{ inputs.package_revision || '1' }}
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Validate revision and source ancestry
+        run: |
+          [[ $PACKAGE_REVISION =~ ^[1-9][0-9]*$ ]]
+          [[ $RELEASE_TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+-dnr\.[0-9]+$ ]]
+          git merge-base --is-ancestor "refs/tags/$RELEASE_TAG" HEAD
+          test "$(uname -sm)" = 'Darwin arm64'
+      - name: Install shared Homebrew runtime
+        run: |
+          brew install fansion314/dnr/dnr
+          dnr --version
+          dnc --version
+          npm install --global pnpm@12.6.0
+      - name: Build and test application
+        run: bash scripts/ci/build-dnr-macos.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: etcher-dnr-macos
+          path: dist/macos-release/*.tar.gz*
+          if-no-files-found: error
+          compression-level: 0
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    # Shares the lock used by this project's existing Linux release workflow.
+    concurrency:
+      group: publish-dnr-${{ inputs.release_tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: etcher-dnr-macos
+          path: release-assets
+      - name: Publish immutable macOS assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-dnr-macos.sh
