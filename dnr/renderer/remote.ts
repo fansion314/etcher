@@ -2,7 +2,9 @@ import { host } from './bridge';
 export const process = { exit: () => host('quit') };
 export const app = { quit: () => host('quit') };
 export const getCurrentWindow = () => ({
-  setTitle: (title: string) => { document.title = title; host('title', title).catch(console.error); },
+  // The upstream progress title changes on every progress event. Native title
+  // updates visibly flicker in dnr, so the dock badge carries progress instead.
+  setTitle: (_title: string) => {},
   setProgressBar: (value: number) => host('progress', value).catch(console.error),
 });
 export const dialog = {

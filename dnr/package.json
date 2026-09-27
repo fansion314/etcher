@@ -3,19 +3,23 @@
   "version": "2.1.7",
   "private": true,
   "type": "module",
+  "engines": {"node": ">=24.15.0"},
   "scripts": {
     "build": "node build.mjs",
     "test": "node tests/run.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.5.2",
+    "@ronomon/direct-io": "file:./native/direct-io",
     "axios": "^1.6.8",
+    "combined-stream": "1.0.8",
     "debug": "4.3.4",
     "drivelist": "^12.0.2",
     "etcher-sdk": "10.0.0",
     "i18next": "23.11.2",
     "immutable": "3.8.2",
     "lodash": "4.17.21",
+    "mountutils": "file:./native/mountutils",
     "outdent": "0.8.0",
     "path-is-inside": "1.0.2",
     "pretty-bytes": "6.1.1",
@@ -27,20 +31,18 @@
     "semver": "7.6.0",
     "styled-components": "5.3.6",
     "sys-class-rgb-led": "3.0.1",
-    "uuid": "9.0.1",
-    "ws": "^8.16.0",
-    "mountutils": "file:./native/mountutils",
-    "@ronomon/direct-io": "file:./native/direct-io",
     "tslib": "2.8.1",
-    "combined-stream": "1.0.8"
+    "uuid": "9.0.1",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
-    "vite-plus": "0.3.3",
-    "vite-plugin-svgr": "5.2.0",
-    "esbuild": "0.28.2",
-    "typescript": "7.0.2",
+    "@sentry/browser": "latest",
     "@types/node": "^22.0.0",
+    "esbuild": "0.28.2",
+    "node-gyp": "13.0.2",
     "path-browserify": "latest",
-    "@sentry/browser": "latest"
+    "typescript": "7.0.2",
+    "vite-plugin-svgr": "5.2.0",
+    "vite-plus": "0.3.3"
   }
 }

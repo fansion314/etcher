@@ -4,10 +4,14 @@ import { createInterface } from 'node:readline';
 import { Readable } from 'node:stream';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const isMac = Deno.build.os === 'darwin';
 // A v4 ZIP is not an OS mount. Relaunch the actual .dnp, then import the worker
 // inside that process's VFS. A bare virtual worker.cjs path cannot be executed.
-let application = join(root, 'etcher.dnp');
-try { await Deno.stat(application); } catch { application = join(root, 'bootstrap.mjs'); }
+let application = join(root, 'bootstrap.mjs');
+for (const name of ['etcher.dnp', 'application.dnp']) {
+  const candidate = join(root, name);
+  try { await Deno.stat(candidate); application = candidate; break; } catch {}
+}
 const encoder = new TextEncoder();
 const configDir = join(Deno.env.get('XDG_CONFIG_HOME') || join(Deno.env.get('HOME')!, '.config'), 'etcher-dnr');
 await Deno.mkdir(configDir, {recursive: true, mode: 0o700});
@@ -32,25 +36,39 @@ let ledColors: Record<string, number[]> = {};
 async function command(program: string, args: string[]) {
   return new Deno.Command(program, {args, stdin: 'null', stdout: 'piped', stderr: 'piped'}).output();
 }
+function appleScript(script: string, args: string[] = []) {
+  return command('/usr/bin/osascript', ['-e', `on run argv\n${script}\nend run`, ...args]);
+}
 function activeWrite() { return [...workers.values()].some(worker => worker.privileged && !worker.finished); }
 async function inhibit(on: boolean) {
-  if (!on) { if (inhibitor) { try { await inhibitor.stdin.close(); } catch {} inhibitor = undefined; } return; }
+  if (!on) {
+    if (inhibitor) {
+      try { if (isMac) inhibitor.kill('SIGTERM'); else await inhibitor.stdin.close(); } catch {}
+      inhibitor = undefined;
+    }
+    return;
+  }
   if (!inhibitor) {
-    inhibitor = new Deno.Command('/usr/bin/systemd-inhibit', {
-      args: ['--what=sleep:idle', '--mode=block', '--why=Etcher is writing a disk', '/usr/bin/cat'],
-      stdin: 'piped', stdout: 'null', stderr: 'inherit',
+    inhibitor = new Deno.Command(isMac ? '/usr/bin/caffeinate' : '/usr/bin/systemd-inhibit', {
+      args: isMac ? ['-dims'] : ['--what=sleep:idle', '--mode=block', '--why=Etcher is writing a disk', '/usr/bin/cat'],
+      stdin: isMac ? 'null' : 'piped', stdout: 'null', stderr: 'inherit',
     }).spawn();
     inhibitor.status.then(status => { if (!status.success) console.error('Sleep inhibition failed'); });
   }
 }
 async function notify(title: string, body: string) {
-  if (settings.desktopNotifications !== false) await command('/usr/bin/notify-send', ['--app-name=Etcher DNR', title, body]);
+  if (settings.desktopNotifications !== false) {
+    if (isMac) await appleScript('display notification (item 2 of argv) with title (item 1 of argv)', [title, body]);
+    else await command('/usr/bin/notify-send', ['--app-name=Etcher', title, body]);
+  }
 }
 async function quit(force = false) {
   if (quitting) return;
   if (activeWrite() && !force) {
-    const result = await command('/usr/bin/zenity', ['--question', '--title=Etcher DNR', '--text=A disk is being written. Cancel the operation and exit?', '--default-cancel']);
-    if (!result.success) return;
+    const result = isMac
+      ? await appleScript('display dialog "A disk is being written. Cancel the operation and exit?" with title "Etcher" buttons {"Keep writing", "Cancel and exit"} default button "Keep writing"')
+      : await command('/usr/bin/zenity', ['--question', '--title=Etcher', '--text=A disk is being written. Cancel the operation and exit?', '--default-cancel']);
+    if (!result.success || (isMac && !new TextDecoder().decode(result.stdout).includes('Cancel and exit'))) return;
   }
   quitting = true;
   ledController?.stop();
@@ -75,8 +93,15 @@ async function openWorker(privileged: boolean) {
   // server, shell interpolation, inherited application environment or auth token.
   const runtime = Deno.execPath();
   const args = [runtime, application, '--worker'];
-  const child = new Deno.Command(privileged ? '/usr/bin/pkexec' : args.shift()!, {
-    args: privileged ? ['--disable-internal-agent', ...args] : args,
+  let askpass: string | undefined;
+  if (privileged && isMac) {
+    askpass = join(uploadRoot, 'askpass');
+    await Deno.writeTextFile(askpass, '#!/bin/sh\nexec /usr/bin/osascript -e \'on run argv\nreturn text returned of (display dialog "Etcher needs administrator access to write the selected disk." default answer "" with hidden answer)\nend run\'\n', {mode: 0o700});
+    await Deno.chmod(askpass, 0o700);
+  }
+  const child = new Deno.Command(privileged ? (isMac ? '/usr/bin/sudo' : '/usr/bin/pkexec') : args.shift()!, {
+    args: privileged ? (isMac ? ['-A', '--', ...args] : ['--disable-internal-agent', ...args]) : args,
+    env: askpass ? {SUDO_ASKPASS: askpass} : undefined,
     stdin: 'piped', stdout: 'piped', stderr: 'inherit',
   }).spawn();
   const id = crypto.randomUUID();
@@ -110,10 +135,12 @@ async function openWorker(privileged: boolean) {
         if (privileged) inhibit(false).catch(console.error);
         if (event.payload?.ejectErrors?.length) {
           const details = event.payload.ejectErrors.map((e: any) => `${e.device}: ${e.message}`).join('\n');
-          command('/usr/bin/zenity', ['--warning', '--title=Etcher: eject incomplete', '--text=Image verification finished, but safe removal did not complete:\n' + details]).catch(console.error);
+          (isMac
+            ? appleScript('display dialog (item 1 of argv) with title "Etcher: eject incomplete" buttons {"OK"}', ['Image verification finished, but safe removal did not complete:\n' + details])
+            : command('/usr/bin/zenity', ['--warning', '--title=Etcher: eject incomplete', '--text=Image verification finished, but safe removal did not complete:\n' + details])).catch(console.error);
         }
         if (!window || window.isClosed()) {
-          notify('Etcher DNR', event.type === 'done' ? 'Disk operation completed. See results in the application log.' : 'Disk operation stopped.').finally(() => quit(true));
+          notify('Etcher', event.type === 'done' ? 'Disk operation completed. See results in the application log.' : 'Disk operation stopped.').finally(() => quit(true));
         }
       }
     } catch (error) { console.error('Invalid worker output', error); }
@@ -203,6 +230,11 @@ async function dispatch(method: string, args: any[]) {
     }
     case 'dialog.open': {
       const options = args[0] ?? {};
+      if (isMac) {
+        const result = await appleScript('return POSIX path of (choose file with prompt "Select an image")');
+        if (!result.success) return [];
+        return [new TextDecoder().decode(result.stdout).trimEnd()];
+      }
       const cmd = ['--file-selection', '--title=Select an image'];
       for (const filter of options.filters ?? []) cmd.push(`--file-filter=${filter.name} | ${filter.extensions.map((e: string) => e === '*' ? '*' : '*.' + e).join(' ')}`);
       const result = await command('/usr/bin/zenity', cmd);
@@ -212,15 +244,23 @@ async function dispatch(method: string, args: any[]) {
     }
     case 'dialog.message': {
       const options = args[0];
+      if (isMac) {
+        const result = await appleScript('return button returned of (display dialog (item 2 of argv) with title (item 1 of argv) buttons {(item 4 of argv), (item 3 of argv)} default button (item 3 of argv))',
+          [options.title, options.message + '\n' + (options.detail || ''), options.buttons[0], options.buttons[1]]);
+        return result.success && new TextDecoder().decode(result.stdout).trimEnd() === options.buttons[0] ? 0 : 1;
+      }
       const result = await command('/usr/bin/zenity', ['--question', '--default-cancel', '--title=' + options.title,
         '--text=' + options.message + '\n' + (options.detail || ''), '--ok-label=' + options.buttons[0], '--cancel-label=' + options.buttons[1]]);
       return result.success ? 0 : 1;
     }
-    case 'dialog.error': await command('/usr/bin/zenity', ['--error', '--title=' + args[0], '--text=' + args[1]]); return null;
+    case 'dialog.error':
+      if (isMac) await appleScript('display dialog (item 2 of argv) with title (item 1 of argv) with icon stop buttons {"OK"}', [args[0], args[1]]);
+      else await command('/usr/bin/zenity', ['--error', '--title=' + args[0], '--text=' + args[1]]);
+      return null;
     case 'openExternal': {
       const url = new URL(args[0]);
       if (!['https:', 'http:', 'mailto:'].includes(url.protocol)) throw new Error('Unsupported external URL');
-      await command('/usr/bin/xdg-open', [url.href]); return null;
+      await command(isMac ? '/usr/bin/open' : '/usr/bin/xdg-open', [url.href]); return null;
     }
     case 'title': window?.setTitle(String(args[0])); return null;
     case 'progress': Deno.dock.setBadge(args[0] < 0 ? null : `${Math.round(args[0] * 100)}%`); return null;
@@ -232,7 +272,9 @@ async function dispatch(method: string, args: any[]) {
     case 'mount-drive': {
       const path = await Deno.realPath(args[0]);
       if (!path.startsWith('/dev/')) throw new Error('Not a device path');
-      const result = await command('/usr/bin/udisksctl', ['mount', '--block-device', path]);
+      const result = isMac
+        ? await command('/usr/sbin/diskutil', ['mount', path])
+        : await command('/usr/bin/udisksctl', ['mount', '--block-device', path]);
       if (!result.success) throw new Error(new TextDecoder().decode(result.stderr));
       return null;
     }
@@ -275,7 +317,7 @@ const server = Deno.serve({hostname: '127.0.0.1', port: 0, onListen() {}}, async
   } catch { return new Response('Not found', {status: 404}); }
 });
 origin = `http://127.0.0.1:${server.addr.port}`;
-window = new Deno.BrowserWindow({title: 'balenaEtcher — dnr', width: 820, height: 560});
+window = new Deno.BrowserWindow({title: 'balenaEtcher', width: 820, height: 560});
 window.setApplicationMenu([
   {submenu: {label: 'Etcher', items: [{item: {id: 'quit', label: 'Quit', accelerator: 'Ctrl+Q', enabled: true}}]}},
   {submenu: {label: 'View', items: [{item: {id: 'devtools', label: 'Developer tools', accelerator: 'Ctrl+Shift+I', enabled: true}}]}},
@@ -296,9 +338,9 @@ window.bind('etcher', async (method: string, args: any[]) => {
 });
 window.addEventListener('close', () => {
   if (quitting) return;
-  // Native close is not cancellable in dnr. Keep an active writer alive instead
-  // of interrupting the disk; the user can cancel from the visible application.
-  if (activeWrite()) void notify('Etcher DNR', 'The disk operation continues in the background. You will be notified when it finishes.');
+  // Keep an active writer alive after the window closes; report completion
+  // through a desktop notification.
+  if (activeWrite()) void notify('Etcher', 'The disk operation continues in the background. You will be notified when it finishes.');
   else void quit(true);
 });
 window.navigate(`${origin}/${secret}/`);

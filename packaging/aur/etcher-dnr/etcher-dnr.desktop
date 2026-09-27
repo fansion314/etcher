@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=balenaEtcher (dnr)
+Name=balenaEtcher
 Comment=Flash and verify operating system images
-Exec=etcher-dnr %u
-Icon=etcher-dnr
+Exec=etcher %u
+Icon=etcher
 Terminal=false
 Categories=Utility;System;
 StartupNotify=true

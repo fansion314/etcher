@@ -1,4 +1,4 @@
-# Etcher on dnr — Linux x86_64 experiment
+# Etcher on dnr — Linux x86_64 and macOS arm64
 
 This target keeps Etcher 2.1.7's React UI and etcher-sdk image writer, and replaces
 Electron with the shared dnr runtime. It does not bundle Electron, Node, Deno or
@@ -6,17 +6,17 @@ CEF. Build-time Node/pnpm are separate from the runtime dependency on dnr.
 
 ## Build and run
 
-Install `nodejs` (22.13 or newer), `pnpm` (11 or newer), `dnc>=0.4.0`,
-`dnr>=0.4.0`, `base-devel`, `pkgconf`, `python`, `glib2`, `util-linux-libs`, and `xz`.
-The desktop additionally uses `zenity`, `udisks2`, `polkit`, `xdg-utils`,
-`libnotify`, and `systemd-inhibit`. A polkit authentication agent must be running
-in the graphical session to authorize writing. Install shared CEF + GTK3 or
-the WebKitGTK backend supported by your chosen dnr package.
+Install Node 24.15 or newer, pnpm 11 or newer, `dnc>=0.4.1`, `dnr>=0.4.1`,
+Python, and xz. Linux builds also need `base-devel`, `pkgconf`, `glib2`, and
+`util-linux-libs`. The Linux desktop uses `zenity`, `udisks2`, `polkit`,
+`xdg-utils`, `libnotify`, and `systemd-inhibit`; a polkit authentication agent
+must be running to authorize writing. macOS builds need Xcode Command Line
+Tools; `node-gyp` builds drivelist if no arm64 prebuilt binary is available.
 
 ```sh
 cd dnr
 pnpm install --frozen-lockfile
-pnpm exec node build.mjs
+node build.mjs
 node tests/run.mjs
 node tests/package.mjs
 cd ..
@@ -26,9 +26,15 @@ dnr --backend webview out/bundle/etcher.dnp
 dnr --backend system-cef out/bundle/etcher.dnp /absolute/path/image.img
 ```
 
-The parent repository's `.nvmrc` pins Node 20 for Electron. Use the system Node
-for this target if your version manager inherits that pin. Vite+ is pinned to
-stable 0.3.3; its `latest` tag pointed to a release candidate during this port.
+On macOS arm64, the build also writes `out/bundle/balenaEtcher.app`. Its thin
+launcher refers to the `dnr` executable found on `PATH` during the build; set
+`DNR_RUNTIME_PATH=/absolute/path/to/dnr` to select a different installed shared
+runtime. The bundle is signed locally with an ad-hoc signature. It does not
+embed dnr or provide Developer ID signing or notarization.
+
+The parent repository's `.nvmrc` pins Node 20 for Electron. Select Node 24 or
+newer before installing this target's dependencies. Vite+ is pinned to stable
+0.3.3 in this target's lockfile.
 Upstream React/rendition/SDK major versions are retained to isolate runtime
 compatibility from an unrelated UI/SDK upgrade. The new target has its own lockfile.
 
@@ -36,37 +42,38 @@ Output `out/bundle/etcher.dnp` is **format v4**, appId
 `io.balena.etcher.dnr`, with the Etcher PNG embedded as a 128×128 RGBA window
 icon. A single reviewed native group keeps backend dependencies and their
 relative symlinks together. Other-platform prebuilds, Electron prebuilds and
-compiler intermediates are removed. Raspberry Pi boot firmware is retained;
+compiler intermediates are removed. Linux retains Raspberry Pi boot firmware;
 the dnc native detector classifies its ELF files as executable resources, but
 the SDK transfers these files to devices rather than executing them on the host.
+The macOS arm64 package omits this firmware payload.
 
 ## AUR recipe
 
 `packaging/aur/etcher-dnr/` is self-contained: a pinned upstream archive plus a
 checksummed source overlay, launcher, desktop file, `PKGBUILD` and `.SRCINFO`.
-It does not require the adjacent development checkout of dnr.
+`packaging/aur/etcher-dnr-bin/` installs the matching GitHub Release package
+after verifying its published SHA-256. Neither recipe needs the adjacent dnr
+development checkout.
 
 ```sh
 cd packaging/aur/etcher-dnr
 makepkg -si
-etcher-dnr
+etcher
 # Optional runtime override:
-ETCHER_DNR_BACKEND=webview etcher-dnr
+ETCHER_DNR_BACKEND=webview etcher
 ```
 
-The dependency `dnr>=0.4.0` accepts `dnr`, `dnr-bin`, `dnr-cef`, `dnr-cef-bin`,
+The dependency `dnr>=0.4.1` accepts `dnr`, `dnr-bin`, `dnr-cef`, `dnr-cef-bin`,
 `dnr-webview`, and `dnr-webview-bin` via their versioned provides. Similarly,
-`dnc-bin` can satisfy the build dependency on dnc. The recipe explicitly requires
-shared `cef` and `gtk3`, making the default dual runtime usable on a clean
-installation. A WebView-only runtime brings its own mandatory WebKitGTK stack;
-in that combination CEF remains installed but is not used. Pacman cannot express
-a dependency on “CEF plus GTK, or WebKitGTK” without a common provider package.
+`dnc-bin` can satisfy the source build dependency on dnc. Both recipes require
+WebKitGTK and GTK3, so the shared dual runtime can use its WebView fallback on a
+clean installation. CEF remains an optional backend when installed separately.
 
 The pacman payload includes the `.dnp` and its preinstalled native group. This
 avoids first-run native extraction and lets the privileged worker use root-owned
 installed files. `!strip` is intentional: modifying a native file after dnc has
 hashed it would invalidate the v4 integrity metadata. Upgrades are handled by
-pacman, not electron-updater. This recipe has not been submitted to the AUR.
+pacman, not electron-updater. These recipes have not been submitted to the AUR.
 
 After editing the port, refresh the distributable overlay and checksums:
 
@@ -81,20 +88,19 @@ node dnr/update-aur.mjs
   a `BrowserWindow.bind()` boundary. The host serves only bundled assets over an
   unguessable loopback path; it does not expose a general HTTP RPC endpoint.
 - The scanner and writer run in separate dnr processes. Private stdin/stdout
-  pipes replace the original fixed-port WebSocket servers. `pkexec` starts the
-  writer with argument arrays, without interpolating a shell command. The host
-  does not forward its entire environment to root.
+  pipes replace the original fixed-port WebSocket servers. Linux uses `pkexec`;
+  macOS uses `sudo -A` with a temporary AppleScript password prompt. Both start
+  the writer with argument arrays and do not interpolate a shell command.
 - The package re-enters its own bootstrap with `--worker`. Executing a ZIP-only
   `worker.cjs` filesystem path would fail, because dnr's VFS is not an OS mount.
 - Settings are stored in `$XDG_CONFIG_HOME/etcher-dnr/config.json` (or the usual
   `~/.config` fallback). Existing Electron settings are not overwritten.
-- File selection uses the shared Zenity native dialog. Browser file drops cannot
+- File selection uses Zenity on Linux and AppleScript on macOS. Browser file drops cannot
   expose arbitrary local paths, so dropped files are streamed to an app-owned
   temporary file and removed on exit. Selecting a file through the dialog avoids
   this extra copy. Local images, HTTP images and drive cloning retain the SDK path.
-- Sleep/idle inhibition is held while flashing. Window progress is represented
-  by the title and dnr dock badge; an Electron-style Linux taskbar progress API is
-  not available through this dnr interface.
+- Sleep/idle inhibition is held while flashing. The dnr dock badge represents
+  progress; the title stays fixed to avoid native title flicker.
 - dnr's native close event is not cancellable. Closing a window during a write
   therefore keeps the writer running in the background and sends a completion
   notification. The ordinary cancel button still aborts the operation. The host
@@ -103,9 +109,8 @@ node dnr/update-aur.mjs
   not embedded into a page with disk-operation bindings; dnr has no isolated
   Electron `<webview>`/session equivalent. Electron Sentry is replaced with its
   browser SDK; reporting defaults off and no upstream reporting token is embedded.
-- The Linux LED mapping adapter moves sysfs I/O to the host. Etcher Pro hardware,
-  Windows/macOS-specific behavior are outside
-  this Linux x86_64 experiment's validated hardware/platform scope.
+- The Linux LED mapping adapter moves sysfs I/O to the host. Etcher Pro hardware
+  and physical USB flashing on macOS have not been validated.
 
 ## Native adapters
 
@@ -127,30 +132,20 @@ Ejection failures are displayed separately from image verification results.
 Set `ejectOnSuccess` to false in the configuration to retain the device.
 
 `native/direct-io/index.cjs` replaces the SDK's old native aligned-buffer helper
-with a Deno pointer-based aligned slice. Linux `O_DIRECT` remains enabled. This
-adapter is Linux-only; it does not pretend to implement macOS `F_NOCACHE`.
-
-The packaged SDK delegates its file opens to this adapter. Deno 2.9.7 treats
-numeric `O_EXCL` without `O_CREAT` as creation and incorrectly returns `EEXIST`.
-`native/exclusive-open.c` opens with the original flags, including `O_EXCL`, and
-retains that descriptor until the SDK closes its FileHandle. The adapter opens
-`/proc/self/fd/<native-fd>` without `O_EXCL` to obtain a real Deno FileHandle for
-read/write, streams and sync. The native descriptor retains the kernel block
-device claim throughout writing and verification; it is also closed when the
-managed open fails. Busy devices fail without a nonexclusive fallback. This
-requires procfs. Linux exclusive claims protect against mounts and other exclusive
-openers; they do not prevent arbitrary nonexclusive raw-device writes.
+with a Deno pointer-based aligned slice. Linux `O_DIRECT` and macOS `O_EXLOCK`
+remain enabled. dnr 0.4.1 fixes numeric `O_EXCL` handling, so the SDK now uses
+`fs.promises.open` directly with one managed descriptor. The macOS adapter
+currently leaves `F_NOCACHE` disabled; write completion still uses `fsync`.
+`native/mountutils/darwin.cjs` delegates unmount and eject to `diskutil`.
 
 ## Verification boundaries
 
 `tests/runtime.cjs` runs real SDK operations under dnr, with raw/gzip/xz/ZIP/bzip2 and HTTP sources,
-two temporary regular-file destinations, verification, actual `O_DIRECT` file
-I/O, aligned buffers, FFI errors, and read-only enumeration of real devices.
-It also exercises SDK `BlockDevice` writing and verification against a temporary
-file with its real `O_RDWR | O_DIRECT | O_EXCL` flags, checks the exclusive
-descriptor remains open during verification, and tests open-failure cleanup.
-`native/tests/test-exclusive-open.c` checks unchanged exclusive flags, busy
-error propagation and refusal to create or truncate destinations.
+two temporary regular-file destinations, verification, aligned buffers, and
+read-only enumeration of real devices. On Linux it also exercises `O_DIRECT`
+and SDK `BlockDevice` writing against a temporary file with its real
+`O_RDWR | O_DIRECT | O_EXCL` flags. On macOS it checks `O_EXLOCK` and the disk
+adapter's path validation.
 `native/tests/test-native.c` exercises the native implementation with substituted
 kernel/D-Bus boundaries, including busy devices, escaped paths, nested mounts,
 system-volume refusal, eject versus power-off, shared readers and error propagation.
@@ -161,4 +156,4 @@ then runs the SDK/FFI tests from the archive with an isolated cache.
 `--smoke` opens a real window and checks renderer readiness, binding calls and
 worker startup, then exits. Run separately for `system-cef` and `webview`.
 These checks do not substitute for authorizing a disposable physical USB drive
-and exercising a real polkit elevation, write, unplug and power-off cycle.
+and exercising a real privileged write, unplug and safe-eject cycle.

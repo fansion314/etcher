@@ -23,6 +23,11 @@ async function main() {
       assert.equal(buffer[8191], 0x5a);
     }
     console.log('PASS aligned buffers');
+    const payload = Buffer.alloc(2 * 1024 * 1024);
+    for (let i = 0; i < payload.length; i++) payload[i] = (i * 17 + (i >> 12)) % 251;
+    const raw = path.join(temporary, 'source.img');
+    await fs.writeFile(raw, payload);
+    if (process.platform === 'linux') {
     const directPath = path.join(temporary, 'direct-io.img');
     await fs.writeFile(directPath, Buffer.alloc(8192));
     const handle = await fs.open(directPath, require('node:fs').constants.O_DIRECT | require('node:fs').constants.O_RDWR);
@@ -45,8 +50,8 @@ async function main() {
       return links.filter(link => link === file).length;
     }
     const flags = constants.O_RDWR | constants.O_DIRECT | constants.O_EXCL;
-    const exclusive = await direct.open(exclusivePath, flags);
-    assert.equal(await descriptorsFor(exclusivePath), 2, 'native claim and managed handle remain open together');
+    const exclusive = await fs.open(exclusivePath, flags);
+    assert.equal(await descriptorsFor(exclusivePath), 1, 'dnr keeps one managed exclusive descriptor');
     directBuffer.fill(0x62);
     await exclusive.write(directBuffer, 0, directBuffer.length, 0);
     await exclusive.sync();
@@ -56,27 +61,16 @@ async function main() {
     // Numeric fd consumers must also see a genuine Deno-managed descriptor.
     const stream = require('node:fs').createWriteStream(null, {fd: exclusive.fd, autoClose: false});
     await new Promise((resolve, reject) => { stream.once('error', reject); stream.end(directBuffer, resolve); });
-    assert.equal(await descriptorsFor(exclusivePath), 2);
-    await Promise.all([exclusive.close(), exclusive.close()]);
-    assert.equal(await descriptorsFor(exclusivePath), 0, 'close releases both descriptors exactly once');
-    await assert.rejects(direct.open(exclusivePath, flags | constants.O_CREAT), {code: 'EEXIST'});
-    await assert.rejects(direct.open(exclusivePath, flags | constants.O_TRUNC), {code: 'EINVAL'});
-    await assert.rejects(direct.open(exclusivePath + '.absent', flags), {code: 'ENOENT'});
-    await assert.rejects(direct.open(exclusivePath + '\0suffix', flags), /NUL/);
-    const originalOpen = fs.open;
-    fs.open = async () => { throw new Error('simulated managed open failure'); };
-    try { await assert.rejects(direct.open(exclusivePath, flags), /simulated managed open failure/); }
-    finally { fs.open = originalOpen; }
-    assert.equal(await descriptorsFor(exclusivePath), 0, 'failed managed open releases native claim');
-    console.log('PASS O_EXCL lifetime, direct read/write/sync, WriteStream, close and failure cleanup');
+    assert.equal(await descriptorsFor(exclusivePath), 1);
+    await exclusive.close();
+    assert.equal(await descriptorsFor(exclusivePath), 0, 'close releases exclusive descriptor');
+    await assert.rejects(fs.open(exclusivePath, flags | constants.O_CREAT), {code: 'EEXIST'});
+    await assert.rejects(fs.open(exclusivePath + '.absent', flags), {code: 'ENOENT'});
+    console.log('PASS dnr O_EXCL direct read/write/sync and descriptor lifetime');
     await assert.rejects(promisify(mount.unmountDisk)(path.join(temporary, 'absent')), /No such file/);
     await assert.rejects(promisify(mount.eject)('/dev/null'), /Not a block device/);
     await assert.rejects(promisify(mount.unmountDisk)('/dev/a\0b'), /NUL/);
     console.log('PASS FFI loading and non-destructive error paths');
-    const payload = Buffer.alloc(2 * 1024 * 1024);
-    for (let i = 0; i < payload.length; i++) payload[i] = (i * 17 + (i >> 12)) % 251;
-    const raw = path.join(temporary, 'source.img');
-    await fs.writeFile(raw, payload);
     // Exercise the SDK's real BlockDevice flags and streams on a temporary file.
     // Substitute only unmount: no real device is opened or modified by this test.
     const blockPath = path.join(temporary, 'block-destination.img');
@@ -86,7 +80,7 @@ async function main() {
     let blockReads = 0;
     class TestBlockDevice extends sdk.sourceDestination.BlockDevice {
       async read(...args) {
-        assert.equal(await descriptorsFor(blockPath), 2, 'exclusive descriptor retained during verification');
+        assert.equal(await descriptorsFor(blockPath), 1, 'exclusive descriptor retained during verification');
         blockReads++;
         return super.read(...args);
       }
@@ -106,6 +100,19 @@ async function main() {
       assert.deepEqual(await fs.readFile(blockPath), payload);
     } finally { mount.unmountDisk = originalUnmount; }
     console.log('PASS SDK BlockDevice O_RDWR | O_DIRECT | O_EXCL write and verification on temporary file');
+    } else {
+      await assert.rejects(promisify(mount.eject)('/dev/null'), /macOS disk device path/);
+      console.log('PASS macOS disk adapter rejects non-disk paths');
+      const lockPath = path.join(temporary, 'exclusive.img');
+      await fs.writeFile(lockPath, Buffer.alloc(4096));
+      const flags = require('node:fs').constants.O_RDWR | direct.O_EXLOCK;
+      const locked = await fs.open(lockPath, flags);
+      try {
+        await assert.rejects(fs.open(lockPath, flags | require('node:fs').constants.O_NONBLOCK),
+          error => ['EWOULDBLOCK', 'EAGAIN'].includes(error.code));
+      } finally { await locked.close(); }
+      console.log('PASS macOS exclusive open flag');
+    }
     await fs.writeFile(raw + '.gz', gzipSync(payload));
     const xz = spawnSync('xz', ['-c', raw]);
     assert.equal(xz.status, 0, xz.stderr.toString());

@@ -51,9 +51,12 @@ createInterface({input: stdin}).on('line', async line => {
       for (const drive of payload.destinations) {
         const device = await fs.realpath(drive.device);
         const raw = await fs.realpath(drive.raw);
-        if (device !== raw || !(await fs.stat(raw)).isBlockDevice()) throw new Error('Destination must identify one real block device');
+        const valid = Deno.build.os === 'darwin'
+          ? /^\/dev\/disk\d+$/.test(device) && raw === device.replace('/dev/disk', '/dev/rdisk') && (await fs.stat(raw)).isCharacterDevice()
+          : device === raw && (await fs.stat(raw)).isBlockDevice();
+        if (!valid) throw new Error('Destination must identify one real disk device');
         if (seen.has(raw)) throw new Error('Duplicate destination');
-        if (payload.image.drive && await fs.realpath(payload.image.drive.device) === raw) throw new Error('Source and destination must differ');
+        if (payload.image.drive && await fs.realpath(payload.image.drive.raw || payload.image.drive.device) === raw) throw new Error('Source and destination must differ');
         seen.add(raw);
       }
       const results = await write(payload);

@@ -6,17 +6,20 @@ import { build } from 'esbuild';
 const here = import.meta.dirname;
 const repo = dirname(here);
 const output = join(repo, 'out/dnr');
+const isLinux = process.platform === 'linux' && process.arch === 'x64';
+const isMac = process.platform === 'darwin' && process.arch === 'arm64';
+if (!isLinux && !isMac) throw new Error(`Unsupported dnr target: ${process.platform}/${process.arch}`);
 function run(program, args, options = {}) {
   const result = spawnSync(program, args, {cwd: here, stdio: 'inherit', ...options});
   if (result.status !== 0) throw new Error(`${program} failed (${result.status}): ${result.error || ''}`);
 }
 await fs.mkdir(output, {recursive: true});
-const pkgFlags = spawnSync('pkg-config', ['--cflags', '--libs', 'mount', 'gio-2.0'], {encoding: 'utf8'});
-if (pkgFlags.status) throw new Error(pkgFlags.stderr);
-run('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-shared',
-  'native/mountutils.c', '-o', 'native/mountutils/libetcher-mountutils.so', ...pkgFlags.stdout.trim().split(/\s+/)]);
-run('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-shared',
-  'native/exclusive-open.c', '-o', 'native/direct-io/libetcher-exclusive-open.so']);
+if (isLinux) {
+  const pkgFlags = spawnSync('pkg-config', ['--cflags', '--libs', 'mount', 'gio-2.0'], {encoding: 'utf8'});
+  if (pkgFlags.status) throw new Error(pkgFlags.stderr);
+  run('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-fvisibility=hidden', '-shared',
+    'native/mountutils.c', '-o', 'native/mountutils/libetcher-mountutils.so', ...pkgFlags.stdout.trim().split(/\s+/)]);
+}
 
 const source = join(here, '.build/src');
 await fs.mkdir(source, {recursive: true});
@@ -98,29 +101,24 @@ for (const [name, sourceName] of [['mountutils', 'mountutils'], ['@ronomon/direc
   for (const [original, target] of copied) {
     const metadata = JSON.parse(await fs.readFile(join(target, 'package.json')));
     if (metadata.name !== name) continue;
-    await fs.copyFile(join(here, 'native', sourceName, 'index.cjs'), join(target, 'index.cjs'));
-    if (name === 'mountutils') await fs.copyFile(join(here, 'native/mountutils/libetcher-mountutils.so'), join(target, 'libetcher-mountutils.so'));
-    if (name === '@ronomon/direct-io') await fs.copyFile(join(here, 'native/direct-io/libetcher-exclusive-open.so'), join(target, 'libetcher-exclusive-open.so'));
+    await fs.copyFile(join(here, 'native', sourceName, isMac && name === 'mountutils' ? 'darwin.cjs' : 'index.cjs'), join(target, 'index.cjs'));
+    if (name === 'mountutils' && isLinux) await fs.copyFile(join(here, 'native/mountutils/libetcher-mountutils.so'), join(target, 'libetcher-mountutils.so'));
   }
 }
-// Adapt only the packaged SDK. The helper delegates ordinary files unchanged.
-const sdkFile = join(modules, 'etcher-sdk/build/source-destination/file.js');
-const sdkCode = await fs.readFile(sdkFile, 'utf8');
-const sdkOpen = 'fs_1.promises.open(this.path, this.getOpenFlags())';
-if (sdkCode.split(sdkOpen).length !== 2) throw new Error('Review SDK exclusive-open adaptation');
-await fs.writeFile(sdkFile, sdkCode.replace(sdkOpen, 'require("@ronomon/direct-io").open(this.path, this.getOpenFlags())'));
 await fs.writeFile(join(output, 'package.json'), JSON.stringify({name: 'etcher-dnr', version: upstreamPackage.version, type: 'module', license: 'Apache-2.0'}));
 await fs.copyFile(join(repo, 'LICENSE'), join(output, 'LICENSE'));
 await fs.copyFile(join(here, 'runtime/bootstrap.mjs'), join(output, 'bootstrap.mjs'));
 await fs.copyFile(join(here, 'tests/runtime.cjs'), join(output, 'runtime-tests.cjs'));
-// Remove other OS/CPU prebuilds and compiler intermediates from this x86_64 build.
+// Remove other OS/CPU prebuilds and compiler intermediates.
 async function prune(directory) {
   for (const entry of await fs.readdir(directory, {withFileTypes: true})) {
     const path = join(directory, entry.name);
     if (entry.isSymbolicLink()) continue;
     const rel = relative(output, path).replaceAll('\\', '/');
-    if (/\/prebuilds\/[^/]+$/.test(rel) && entry.name !== 'linux-x64' ||
-        /\/(obj\.target|\.deps)$/.test(rel) || /\.(map|o|gcda|gcno|dll|dylib)$/.test(entry.name) || /\.d\.(ts|mts|cts)$/.test(entry.name) ||
+    if (/\/prebuilds\/[^/]+$/.test(rel) && !(isMac ? ['darwin-arm64', 'darwin-x64+arm64'].includes(entry.name) : entry.name === 'linux-x64') ||
+        /\/(obj\.target|\.deps)$/.test(rel) || /\.(map|o|gcda|gcno|dll)$/.test(entry.name) ||
+        (/\/build\//.test(rel) && (entry.name === 'Makefile' || entry.name === 'config.gypi' || entry.name.endsWith('.mk'))) ||
+        (isLinux && entry.name.endsWith('.dylib')) || (isMac && entry.name.endsWith('.so')) || /\.d\.(ts|mts|cts)$/.test(entry.name) ||
         /\.musl\.node$|^electron\..*\.node$/.test(entry.name)) {
       await fs.rm(path, {recursive: true, force: true}); continue;
     }
@@ -136,25 +134,47 @@ async function nativeFiles(directory) {
     if (entry.isDirectory()) { await nativeFiles(path); continue; }
     const rel = relative(output, path).replaceAll('\\', '/');
     if (entry.name.endsWith('.node')) addons.push({path: rel, napi: 8});
-    else if (/\.so(?:\.|$)/.test(entry.name)) libraries.push(rel);
+    else if (isMac ? entry.name.endsWith('.dylib') : /\.so(?:\.|$)/.test(entry.name)) libraries.push(rel);
     else {
+      // Raspberry Pi firmware is transferred to devices, never executed here.
+      if (isMac && rel.includes('/node-raspberrypi-usbboot/blobs/')) continue;
       const handle = await fs.open(path); const bytes = Buffer.alloc(4);
       await handle.read(bytes, 0, 4, 0); await handle.close();
       const script = /\.(js|ts|mjs|cjs|jsx|tsx)$/.test(entry.name);
-      if (bytes.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || (!script &&
+      if (bytes.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || bytes.equals(Buffer.from([0xcf, 0xfa, 0xed, 0xfe])) || (!script &&
           (bytes.subarray(0, 2).toString() === '#!' || ((await fs.stat(path)).mode & 0o111)))) executables.push(rel);
     }
   }
 }
 await nativeFiles(modules);
 const packageConfig = {
-  schemaVersion: 1, targets: {linux_x64_glibc: {os: 'linux', arch: 'x64', libc: 'glibc'}},
+  schemaVersion: 1, targets: isMac ? {darwin_arm64: {os: 'darwin', arch: 'arm64'}} : {linux_x64_glibc: {os: 'linux', arch: 'x64', libc: 'glibc'}},
   groups: [{id: 'backend', files: ['node_modules/**', 'worker.cjs'], native: {addons, libraries, executables}}],
 };
 await fs.writeFile(join(here, '.build/native.json'), JSON.stringify(packageConfig, null, 2));
 const bundle = join(repo, 'out/bundle');
 await fs.mkdir(bundle, {recursive: true});
+const excluded = [];
+if (isMac) {
+  for (const target of copied.values()) {
+    const metadata = JSON.parse(await fs.readFile(join(target, 'package.json')));
+    if (metadata.name === 'node-raspberrypi-usbboot') excluded.push('--exclude', relative(output, join(target, 'blobs')));
+  }
+}
 run('dnc', [output, '--entry', 'bootstrap.mjs', '--app-id', 'io.balena.etcher.dnr',
   '--window-icon', join(repo, 'assets/icon.png'), '--package-config', join(here, '.build/native.json'),
-  '-o', join(bundle, 'etcher.dnp'), '--force']);
+  ...excluded, '-o', join(bundle, 'etcher.dnp'), '--force']);
+if (isMac) {
+  const runtimePath = process.env.DNR_RUNTIME_PATH || spawnSync('which', ['dnr'], {encoding: 'utf8'}).stdout?.trim();
+  if (!runtimePath?.startsWith('/')) throw new Error('Set DNR_RUNTIME_PATH to the installed absolute dnr path');
+  const desktopManifest = join(here, '.build/desktop-macos.json');
+  await fs.writeFile(desktopManifest, JSON.stringify({
+    appId: 'io.balena.etcher.dnr', name: 'balenaEtcher', version: upstreamPackage.version,
+    description: upstreamPackage.description, entry: 'bootstrap.mjs',
+    windowIcon: '../../assets/icon.png',
+    macos: {icon: '../../assets/icon.icns', runtimePath},
+  }, null, 2));
+  run('dnc', [output, '--desktop-manifest', desktopManifest, '--package-config', join(here, '.build/native.json'),
+    ...excluded, '--target', 'macos', '-o', join(bundle, 'balenaEtcher.app'), '--force']);
+}
 console.log(`Prepared ${output} (${copied.size} backend packages; no Electron or Node executable)`);

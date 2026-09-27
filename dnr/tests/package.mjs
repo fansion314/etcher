@@ -13,10 +13,10 @@ assert.equal(metadata.manifest.appId, 'io.balena.etcher.dnr');
 assert.equal(metadata.manifest.desktop.windowIcon.width, 128);
 assert.equal(metadata.manifest.desktop.windowIcon.height, 128);
 assert.equal(metadata.manifest.desktop.windowIcon.bytes, 65536);
-assert.ok(metadata.records.some(record => record.native === 'library' && record.path.endsWith('libetcher-mountutils.so')));
-assert.ok(metadata.records.some(record => record.native === 'library' && record.path.endsWith('libetcher-exclusive-open.so')));
+if (process.platform === 'linux') assert.ok(metadata.records.some(record => record.native === 'library' && record.path.endsWith('libetcher-mountutils.so')));
+assert.ok(!metadata.records.some(record => record.path.endsWith('libetcher-exclusive-open.so')));
 assert.ok(metadata.records.some(record => record.native === 'addon'));
-console.log('PASS v4 metadata, embedded 128x128 icon, FFI and Node-API declarations');
+console.log('PASS v4 metadata, embedded 128x128 icon and native declarations');
 const cache = mkdtempSync(resolve(tmpdir(), 'etcher-dnr-cache-'));
 try {
   const test = spawnSync(process.env.DNR_BIN || 'dnr', [bundle, '--self-test'], {

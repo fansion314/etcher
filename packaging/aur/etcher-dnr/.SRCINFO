@@ -1,18 +1,18 @@
 pkgbase = etcher-dnr
-	pkgdesc = Etcher image flasher using shared dnr and system desktop libraries (experimental Linux port)
+	pkgdesc = Etcher image flasher using the shared dnr runtime
 	pkgver = 2.1.7
-	pkgrel = 2
+	pkgrel = 3
 	url = https://github.com/balena-io/etcher
 	arch = x86_64
 	license = Apache-2.0
 	checkdepends = xz
-	makedepends = nodejs>=22.13
+	makedepends = nodejs>=24.15
 	makedepends = pnpm>=11
-	makedepends = dnc>=0.4.0
+	makedepends = dnc>=0.4.1
 	makedepends = pkgconf
 	makedepends = python
-	depends = dnr>=0.4.0
-	depends = cef
+	depends = dnr>=0.4.1
+	depends = webkit2gtk-4.1
 	depends = gtk3
 	depends = glib2
 	depends = util-linux-libs
@@ -23,6 +23,13 @@ pkgbase = etcher-dnr
 	depends = libnotify
 	depends = systemd-libs
 	depends = systemd
+	provides = etcher=2.1.7
+	provides = balena-etcher=2.1.7
+	conflicts = etcher-dnr-bin
+	conflicts = etcher
+	conflicts = etcher-bin
+	conflicts = balena-etcher
+	conflicts = balena-etcher-bin
 	options = !strip
 	options = !debug
 	options = staticlibs
@@ -34,8 +41,8 @@ pkgbase = etcher-dnr
 	source = etcher-dnr
 	source = etcher-dnr.desktop
 	sha256sums = ca4983d81dbe4cdd5f04b93b806fe177a32395bd85a9c4b12f44ef7a26167f35
-	sha256sums = e929011268681b2d265b708d0e6bf01586782080a33370f34a989ce89a7447ec
+	sha256sums = 10316334a5ff0e29b91e5ac0e7c067ea7d9d2b43887ea9e74d94f11f7c222225
 	sha256sums = c3098db5b878a1a4624e30d9434fcbb484fbbe517c03a718d7d518a9371bf83f
-	sha256sums = 564682b555b50bfa9e26bc9afd2faaa51a9fec7854f05a64ceb9b75fd266a674
+	sha256sums = 193c10c25951ebd21fa138cadb4726b79d21bc76444e1657caf19d7f6b0485d5
 
 pkgname = etcher-dnr

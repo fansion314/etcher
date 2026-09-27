@@ -1,0 +1,46 @@
+# Maintainer: Peilin Fan <peilin.fan@foxmail.com>
+pkgname=etcher-dnr-bin
+pkgver=2.1.7
+pkgrel=3
+pkgdesc='Etcher image flasher using the shared dnr runtime (prebuilt)'
+arch=('x86_64')
+url='https://github.com/fansion314/etcher'
+license=('Apache-2.0')
+provides=("etcher-dnr=$pkgver" "etcher=$pkgver" "balena-etcher=$pkgver")
+conflicts=('etcher-dnr' 'etcher' 'etcher-bin' 'balena-etcher' 'balena-etcher-bin')
+depends=('dnr>=0.4.1' 'webkit2gtk-4.1' 'gtk3' 'glib2' 'util-linux-libs' 'udisks2'
+         'polkit' 'zenity' 'xdg-utils' 'libnotify' 'systemd-libs' 'systemd')
+options=('!strip' '!debug')
+_package="etcher-dnr-$pkgver-$pkgrel-x86_64.pkg.tar.zst"
+_release="$url/releases/download/v$pkgver-dnr.$pkgrel"
+source=("$_release/$_package" "$_release/$_package.sha256")
+noextract=("$_package")
+# CI creates the archive after this tag exists; prepare verifies its release digest.
+sha256sums=('SKIP' 'SKIP')
+
+prepare() {
+    cd "$srcdir"
+    local digest filename extra
+    read -r digest filename extra < "$_package.sha256"
+    [[ $digest =~ ^[0-9a-f]{64}$ && $filename == "$_package" && -z $extra ]] || return 1
+    printf '%s  %s\n' "$digest" "$_package" | sha256sum --check --status || return 1
+    mkdir -p payload
+    bsdtar -xf "$_package" -C payload \
+        usr/bin/etcher usr/lib/etcher-dnr \
+        usr/share/applications/etcher.desktop \
+        usr/share/icons/hicolor/512x512/apps/etcher.png \
+        usr/share/licenses/etcher-dnr/LICENSE \
+        usr/share/doc/etcher-dnr/README.md
+}
+
+package() {
+    cd "$srcdir/payload"
+    install -Dm755 usr/bin/etcher "$pkgdir/usr/bin/etcher"
+    install -d "$pkgdir/usr/lib"
+    cp -a --no-preserve=ownership usr/lib/etcher-dnr "$pkgdir/usr/lib/"
+    install -Dm644 usr/share/applications/etcher.desktop "$pkgdir/usr/share/applications/etcher.desktop"
+    install -Dm644 usr/share/icons/hicolor/512x512/apps/etcher.png \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/etcher.png"
+    install -Dm644 usr/share/licenses/etcher-dnr/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 usr/share/doc/etcher-dnr/README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
