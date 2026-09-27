@@ -34,6 +34,22 @@ async function patch(file, from, to) {
   await fs.writeFile(path, text.replace(from, to));
 }
 await patch('lib/gui/app/app.ts', "const { init: ledsInit } = require('./models/leds');", "const { init: ledsInit } = await import('./models/leds');");
+// The local HTTP origin changes on every run. Keep dismissal in Etcher's
+// persistent settings instead of the origin-scoped browser localStorage.
+const mainPage = 'lib/gui/app/pages/main/MainPage.tsx';
+await patch(mainPage, "const ANALYTICS_ALERT_VISIBILITY_KEY = 'analytics_alert_visible';", "const ANALYTICS_ALERT_DISMISSED_SETTING = 'analyticsAlertDismissed';");
+await patch(mainPage,
+  "analyticsAlertIsVisible:\n\t\t\t\tlocalStorage.getItem(ANALYTICS_ALERT_VISIBILITY_KEY) !== 'false',",
+  'analyticsAlertIsVisible: false,');
+await patch(mainPage,
+  "private hideAnalyticsAlert = () => {\n\t\tif (this.state.analyticsAlertIsVisible) {\n\t\t\tlocalStorage.setItem(ANALYTICS_ALERT_VISIBILITY_KEY, 'false');\n\t\t\tthis.setState({ analyticsAlertIsVisible: false });\n\t\t}\n\t};",
+  "private hideAnalyticsAlert = async () => {\n\t\tif (this.state.analyticsAlertIsVisible) {\n\t\t\ttry {\n\t\t\t\tawait settings.set(ANALYTICS_ALERT_DISMISSED_SETTING, true);\n\t\t\t\tthis.setState({ analyticsAlertIsVisible: false });\n\t\t\t} catch (error) {\n\t\t\t\tconsole.error('Could not save privacy notice dismissal', error);\n\t\t\t}\n\t\t}\n\t};");
+await patch(mainPage,
+  'this.setState({ featuredProjectURL: await this.getFeaturedProjectURL() });',
+  'this.setState({ analyticsAlertIsVisible: (await settings.get(ANALYTICS_ALERT_DISMISSED_SETTING)) !== true });\n\t\tthis.setState({ featuredProjectURL: await this.getFeaturedProjectURL() });');
+await patch(mainPage,
+  'if (prevState.hideSettings !== this.state.hideSettings) {\n\t\t\t\tthis.setState({ analyticsAlertIsVisible: false });\n\t\t\t}',
+  'if (prevState.hideSettings !== this.state.hideSettings) {\n\t\t\t\tvoid this.hideAnalyticsAlert();\n\t\t\t}');
 await patch('lib/gui/app/components/source-selector/source-selector.tsx', "await this.selectSource(file.path, 'File').promise;", "await this.selectSource(file.path || await (window as any).etcher.importDroppedFile(file), 'File').promise;");
 // A request failure must settle the metadata promise instead of waiting forever.
 await patch('lib/shared/drive-constraints.ts', "import * as pathIsInside from 'path-is-inside';", "import pathIsInside from 'path-is-inside';");

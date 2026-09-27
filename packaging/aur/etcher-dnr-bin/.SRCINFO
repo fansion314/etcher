@@ -1,7 +1,7 @@
 pkgbase = etcher-dnr-bin
 	pkgdesc = Etcher image flasher using the shared dnr runtime (prebuilt)
 	pkgver = 2.1.7
-	pkgrel = 4
+	pkgrel = 5
 	url = https://github.com/fansion314/etcher
 	arch = x86_64
 	license = Apache-2.0
@@ -25,11 +25,11 @@ pkgbase = etcher-dnr-bin
 	conflicts = etcher-bin
 	conflicts = balena-etcher
 	conflicts = balena-etcher-bin
-	noextract = etcher-dnr-2.1.7-4-x86_64.pkg.tar.zst
+	noextract = etcher-dnr-2.1.7-5-x86_64.pkg.tar.zst
 	options = !strip
 	options = !debug
-	source = https://github.com/fansion314/etcher/releases/download/v2.1.7-dnr.4/etcher-dnr-2.1.7-4-x86_64.pkg.tar.zst
-	source = https://github.com/fansion314/etcher/releases/download/v2.1.7-dnr.4/etcher-dnr-2.1.7-4-x86_64.pkg.tar.zst.sha256
+	source = https://github.com/fansion314/etcher/releases/download/v2.1.7-dnr.5/etcher-dnr-2.1.7-5-x86_64.pkg.tar.zst
+	source = https://github.com/fansion314/etcher/releases/download/v2.1.7-dnr.5/etcher-dnr-2.1.7-5-x86_64.pkg.tar.zst.sha256
 	sha256sums = SKIP
 	sha256sums = SKIP
 

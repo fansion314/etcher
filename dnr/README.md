@@ -6,7 +6,8 @@ CEF. Build-time Node/pnpm are separate from the runtime dependency on dnr.
 
 ## Build and run
 
-Install Node 24.15 or newer, pnpm 11 or newer, `dnc>=0.4.1`, `dnr>=0.4.1`,
+Install Node 24.15 or newer, pnpm 11 or newer, `dnc>=0.4.1`, and `dnr>=0.4.1`
+on Linux or `dnr>=0.4.2` on macOS (for native page zoom),
 Python, and xz. Linux builds also need `base-devel`, `pkgconf`, `glib2`, and
 `util-linux-libs`. The Linux desktop uses `zenity`, `udisks2`, `polkit`,
 `xdg-utils`, `libnotify`, and `systemd-inhibit`; a polkit authentication agent
