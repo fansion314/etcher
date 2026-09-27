@@ -13,7 +13,7 @@ output="$root/dist/release"
 
 if (( EUID == 0 )); then
     source "$recipe"
-    packages=(base-devel curl ca-certificates)
+    packages=(base-devel curl ca-certificates git)
     for dependency in "${depends[@]}" "${makedepends[@]}" "${checkdepends[@]}"; do
         [[ $dependency == dnr\>* || $dependency == dnc\>* ]] || packages+=("$dependency")
     done
