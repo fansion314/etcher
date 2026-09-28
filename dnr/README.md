@@ -185,7 +185,7 @@ Use dnc from Homebrew `dnr 0.4.3` or later to build portable macOS launchers.
 macOS revision without moving an existing tag:
 
 ```sh
-gh workflow run release-dnr-macos.yml --ref main -f release_tag=v2.1.7-dnr.6 -f package_revision=1
+gh workflow run release-dnr-macos.yml --ref main -f release_tag=v2.1.7-dnr.7 -f package_revision=1
 ```
 
 The job publishes a tar.gz, SHA-256 and build provenance; it refuses to replace

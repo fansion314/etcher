@@ -8,6 +8,7 @@ version=${BASH_REMATCH[1]}
 release=${BASH_REMATCH[2]}
 [[ $commit =~ ^[0-9a-f]{40}$ ]]
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+[[ -f "$root/docs/releases/$tag.md" ]]
 recipe="$root/packaging/aur/etcher-dnr/PKGBUILD"
 output="$root/dist/release"
 

@@ -30,5 +30,6 @@ else
     gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
         --title "Etcher dnr $tag" --notes-file "$notes"
 fi
-gh release upload "$tag" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+gh release upload "$tag" "release-assets/$archive" "release-assets/$archive.sha256" \
+    --repo "$GITHUB_REPOSITORY" --clobber
 gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

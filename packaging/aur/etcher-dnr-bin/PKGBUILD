@@ -1,7 +1,7 @@
 # Maintainer: Peilin Fan <peilin.fan@foxmail.com>
 pkgname=etcher-dnr-bin
 pkgver=2.1.7
-pkgrel=6
+pkgrel=7
 pkgdesc='Etcher image flasher using the shared dnr runtime (prebuilt)'
 arch=('x86_64')
 url='https://github.com/fansion314/etcher'

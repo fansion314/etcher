@@ -2,6 +2,7 @@
 set -euo pipefail
 tag=${RELEASE_TAG:?missing release tag}
 revision=${PACKAGE_REVISION:-1}
+[[ -f "docs/releases/$tag.md" ]]
 [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-dnr\.([0-9]+)$ ]]
 version=${BASH_REMATCH[1]}
 release=${BASH_REMATCH[2]}
