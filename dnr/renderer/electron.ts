@@ -16,6 +16,6 @@ export const ipcRenderer = {
   invoke(name: string, ...args: any[]) { return host(name, ...args); },
 };
 export const shell = { openExternal: (url: string) => host('openExternal', url) };
-// dnr owns page zoom. The Electron renderer's post-mount zoom callback must not
-// apply a second CSS scale on top of the native zoom factor.
+// dnr owns user page zoom. Ignore Electron's viewport-based scaling heuristic;
+// the renderer entry sets a fixed platform design baseline independently.
 export const webFrame = { setZoomFactor: (_factor: number) => {} };

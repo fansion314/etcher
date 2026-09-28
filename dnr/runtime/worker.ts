@@ -9,13 +9,10 @@ import { toJSON } from '../.build/src/lib/shared/errors';
 import mountutils from 'mountutils';
 import { promises as fs } from 'node:fs';
 import { sourceDestination } from 'etcher-sdk';
+import { installFlushBeforeClose } from './file-close.cjs';
 
 // Flush write handles before the SDK closes them and before UDisks ejects media.
-const closeFile = sourceDestination.File.prototype._close;
-sourceDestination.File.prototype._close = async function () {
-  if (this.oWrite && this.fileHandle) await this.fileHandle.sync();
-  return closeFile.call(this);
-};
+installFlushBeforeClose(sourceDestination.File);
 
 console.log = console.error; // stdout is exclusively the private parent protocol.
 let writing = false;

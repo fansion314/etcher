@@ -317,10 +317,8 @@ const server = Deno.serve({hostname: '127.0.0.1', port: 0, onListen() {}}, async
   } catch { return new Response('Not found', {status: 404}); }
 });
 origin = `http://127.0.0.1:${server.addr.port}`;
-// Use dnr's native page zoom instead of the Electron renderer's CSS zoom.
-// The latter halved content on Retina displays because outerWidth was reported
-// in a different coordinate space from the page viewport.
-if (isMac) Deno.desktop.setZoomFactor(1.1);
+// dnr restores the user's native zoom before application code runs. The macOS
+// design baseline is set by the renderer; do not overwrite the user's factor.
 window = new Deno.BrowserWindow({title: 'balenaEtcher', width: 820, height: 560});
 window.setApplicationMenu([
   {submenu: {label: 'Etcher', items: [{item: {id: 'quit', label: 'Quit', accelerator: 'Ctrl+Q', enabled: true}}]}},

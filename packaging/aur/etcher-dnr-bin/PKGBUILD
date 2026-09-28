@@ -1,14 +1,14 @@
 # Maintainer: Peilin Fan <peilin.fan@foxmail.com>
 pkgname=etcher-dnr-bin
 pkgver=2.1.7
-pkgrel=5
+pkgrel=6
 pkgdesc='Etcher image flasher using the shared dnr runtime (prebuilt)'
 arch=('x86_64')
 url='https://github.com/fansion314/etcher'
 license=('Apache-2.0')
 provides=("etcher-dnr=$pkgver" "etcher=$pkgver" "balena-etcher=$pkgver")
 conflicts=('etcher-dnr' 'etcher' 'etcher-bin' 'balena-etcher' 'balena-etcher-bin')
-depends=('dnr>=0.4.1' 'webkit2gtk-4.1' 'gtk3' 'glib2' 'util-linux-libs' 'udisks2'
+depends=('dnr>=0.4.3' 'webkit2gtk-4.1' 'gtk3' 'glib2' 'util-linux-libs' 'udisks2'
          'polkit' 'zenity' 'xdg-utils' 'libnotify' 'systemd-libs' 'systemd')
 options=('!strip' '!debug')
 _package="etcher-dnr-$pkgver-$pkgrel-x86_64.pkg.tar.zst"

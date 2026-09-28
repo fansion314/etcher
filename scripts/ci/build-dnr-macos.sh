@@ -7,6 +7,14 @@ version=${BASH_REMATCH[1]}
 release=${BASH_REMATCH[2]}
 [[ $revision =~ ^[1-9][0-9]*$ ]]
 test "$(uname -sm)" = 'Darwin arm64'
+# Raw disk flushing requires the Darwin fsync fix in the shared runtime.
+python3 - <<'PY_VERSION'
+import re, subprocess
+version = subprocess.check_output(["dnr", "--version"], text=True)
+match = re.match(r"dnr (\d+)\.(\d+)\.(\d+) ", version)
+if not match or tuple(map(int, match.groups())) < (0, 4, 3):
+    raise SystemExit("Etcher requires dnr >= 0.4.3 for macOS raw disk flushing")
+PY_VERSION
 test "$version" = "$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')"
 out="$PWD/dist/macos-release"
 mkdir -p "$out"

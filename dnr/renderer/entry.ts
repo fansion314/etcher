@@ -1,4 +1,8 @@
 import { host } from './bridge';
+declare const __ETCHER_LAYOUT_ZOOM__: number;
+// Keep the macOS design's original size independently of dnr's user zoom.
+// This is a fixed platform baseline, never an outerWidth/innerWidth heuristic.
+document.documentElement.style.zoom = String(__ETCHER_LAYOUT_ZOOM__);
 window.addEventListener('error', event => { host('renderer.error', event.message).catch(console.error); });
 window.addEventListener('unhandledrejection', event => { host('renderer.error', String(event.reason?.stack || event.reason)).catch(console.error); });
 // Expose only the explicit host-provided configuration, never the host environment.

@@ -21,6 +21,6 @@ export default defineConfig({
     path: 'path-browserify',
     outdent: resolve(here, 'node_modules/outdent/lib/index.js'),
   }},
-  define: {'process.env.NODE_ENV': '"production"'},
+  define: {'process.env.NODE_ENV': '"production"', '__ETCHER_LAYOUT_ZOOM__': process.platform === 'darwin' ? '1.1' : '1'},
   build: {target: 'es2022', outDir: '../out/dnr/web', emptyOutDir: true},
 });

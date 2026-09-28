@@ -22,8 +22,8 @@ if (( EUID == 0 )); then
     tools=/tmp/etcher-dnr-tools
     mkdir -p "$tools"
     for name in dnr dnc; do
-        archive="$name-0.4.1-1-x86_64.pkg.tar.zst"
-        url="https://github.com/fansion314/dnr/releases/download/v0.4.1/$archive"
+        archive="$name-0.4.3-1-x86_64.pkg.tar.zst"
+        url="https://github.com/fansion314/dnr/releases/download/v0.4.3/$archive"
         curl --fail --location --retry 3 "$url" -o "$tools/$archive"
         curl --fail --location --retry 3 "$url.sha256" -o "$tools/$archive.sha256"
         read -r digest filename extra < "$tools/$archive.sha256"

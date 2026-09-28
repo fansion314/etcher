@@ -6,8 +6,8 @@ CEF. Build-time Node/pnpm are separate from the runtime dependency on dnr.
 
 ## Build and run
 
-Install Node 24.15 or newer, pnpm 11 or newer, `dnc>=0.4.1`, and `dnr>=0.4.1`
-on Linux or `dnr>=0.4.2` on macOS (for native page zoom),
+Install Node 24.15 or newer, pnpm 11 or newer, `dnc>=0.4.1`, and `dnr>=0.4.3`
+(for native page zoom and macOS raw disk flushing),
 Python, and xz. Linux builds also need `base-devel`, `pkgconf`, `glib2`, and
 `util-linux-libs`. The Linux desktop uses `zenity`, `udisks2`, `polkit`,
 `xdg-utils`, `libnotify`, and `systemd-inhibit`; a polkit authentication agent
@@ -64,7 +64,7 @@ etcher
 ETCHER_DNR_BACKEND=webview etcher
 ```
 
-The dependency `dnr>=0.4.1` accepts `dnr`, `dnr-bin`, `dnr-cef`, `dnr-cef-bin`,
+The dependency `dnr>=0.4.3` accepts `dnr`, `dnr-bin`, `dnr-cef`, `dnr-cef-bin`,
 `dnr-webview`, and `dnr-webview-bin` via their versioned provides. Similarly,
 `dnc-bin` can satisfy the source build dependency on dnc. Both recipes require
 WebKitGTK and GTK3, so the shared dual runtime can use its WebView fallback on a
@@ -96,6 +96,10 @@ node dnr/update-aur.mjs
   `worker.cjs` filesystem path would fail, because dnr's VFS is not an OS mount.
 - Settings are stored in `$XDG_CONFIG_HOME/etcher-dnr/config.json` (or the usual
   `~/.config` fallback). Existing Electron settings are not overwritten.
+- The macOS renderer retains its fixed 110% design baseline. Native keyboard
+  zoom is managed and persisted by dnr; startup never overwrites a restored user
+  factor. Linux keeps its 100% design baseline. Neither uses Electron's old
+  `outerWidth`/viewport scaling heuristic.
 - File selection uses Zenity on Linux and AppleScript on macOS. Browser file drops cannot
   expose arbitrary local paths, so dropped files are streamed to an app-owned
   temporary file and removed on exit. Selecting a file through the dialog avoids
@@ -137,6 +141,10 @@ with a Deno pointer-based aligned slice. Linux `O_DIRECT` and macOS `O_EXLOCK`
 remain enabled. dnr 0.4.1 fixes numeric `O_EXCL` handling, so the SDK now uses
 `fs.promises.open` directly with one managed descriptor. The macOS adapter
 currently leaves `F_NOCACHE` disabled; write completion still uses `fsync`.
+dnr 0.4.3 uses macOS's `fsync` syscall for raw disk devices: Rust's ordinary
+`F_FULLFSYNC` path returns `ENOTTY` on these devices after verification.
+Flush failures are propagated, and the worker closes the descriptor even when
+flushing fails.
 `native/mountutils/darwin.cjs` delegates unmount and eject to `diskutil`.
 
 ## Verification boundaries
@@ -159,6 +167,11 @@ worker startup, then exits. Run separately for `system-cef` and `webview`.
 These checks do not substitute for authorizing a disposable physical USB drive
 and exercising a real privileged write, unplug and safe-eject cycle.
 
+The macOS flush regression was reproduced on a disposable raw disk image with
+dnr 0.4.2. With the 0.4.3 runtime fix, the packaged worker wrote and verified
+2 MiB, flushed and closed the device successfully, and an independent read
+matched the source. This does not cover physical USB firmware or ejection.
+
 ## Homebrew macOS releases
 
 Apple Silicon, macOS 15+: `brew install --cask fansion314/dnr/etcher-dnr`.
@@ -167,12 +180,12 @@ It installs dnr as a dependency and installs `balenaEtcher.app` in Applications.
 The personal cask verifies the ad-hoc signature and removes quarantine only from
 this app. It does not provide Apple notarization or disable Gatekeeper.
 
-Use dnc from Homebrew `dnr 0.4.2_1` or later to build portable macOS launchers.
+Use dnc from Homebrew `dnr 0.4.3` or later to build portable macOS launchers.
 `release-dnr-macos.yml` builds/tests on `macos-15` for DNR tags. To add a new
 macOS revision without moving an existing tag:
 
 ```sh
-gh workflow run release-dnr-macos.yml --ref main -f release_tag=v2.1.7-dnr.4 -f package_revision=1
+gh workflow run release-dnr-macos.yml --ref main -f release_tag=v2.1.7-dnr.6 -f package_revision=1
 ```
 
 The job publishes a tar.gz, SHA-256 and build provenance; it refuses to replace
