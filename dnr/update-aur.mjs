@@ -13,7 +13,7 @@ const result = spawnSync('tar', ['--sort=name', '--mtime=@0', '--owner=0', '--gr
 if (result.status) throw new Error('Cannot create AUR overlay');
 const digest = async name => createHash('sha256').update(await fs.readFile(resolve(aur, name))).digest('hex');
 let recipe = await fs.readFile(resolve(aur, 'PKGBUILD'), 'utf8');
-recipe = recipe.replace(/sha256sums=\([\s\S]*?\)/, `sha256sums=('ca4983d81dbe4cdd5f04b93b806fe177a32395bd85a9c4b12f44ef7a26167f35'\n            '${await digest('etcher-dnr-port.tar.gz')}'\n            '${await digest('etcher-dnr')}'\n            '${await digest('etcher-dnr.desktop')}')`);
+recipe = recipe.replace(/sha256sums=\([\s\S]*?\)/, `sha256sums=('2ae8ab28606c54cd983c5c76f3ea6fa44bd0d538bde2d2aa72a5103f8d5af945'\n            '${await digest('etcher-dnr-port.tar.gz')}'\n            '${await digest('etcher-dnr')}'\n            '${await digest('etcher-dnr.desktop')}')`);
 await fs.writeFile(resolve(aur, 'PKGBUILD'), recipe);
 const isRoot = process.getuid?.() === 0;
 for (const directory of [aur, binAur]) {
