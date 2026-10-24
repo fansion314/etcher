@@ -1,6 +1,6 @@
 # Maintainer: Peilin Fan <peilin.fan@foxmail.com>
 pkgname=etcher-dnr-bin
-pkgver=2.1.8
+pkgver=2.1.9
 pkgrel=1
 pkgdesc='Etcher image flasher using the shared dnr runtime (prebuilt)'
 arch=('x86_64')

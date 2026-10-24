@@ -50,7 +50,11 @@ await patch(mainPage,
 await patch(mainPage,
   'if (prevState.hideSettings !== this.state.hideSettings) {\n\t\t\t\tthis.setState({ analyticsAlertIsVisible: false });\n\t\t\t}',
   'if (prevState.hideSettings !== this.state.hideSettings) {\n\t\t\t\tvoid this.hideAnalyticsAlert();\n\t\t\t}');
-await patch('lib/gui/app/components/source-selector/source-selector.tsx', "await this.selectSource(file.path, 'File').promise;", "await this.selectSource(file.path || await (window as any).etcher.importDroppedFile(file), 'File').promise;");
+const sourceSelector = 'lib/gui/app/components/source-selector/source-selector.tsx';
+await patch(sourceSelector, "import { ipcRenderer, webUtils } from 'electron';", "import { ipcRenderer } from 'electron';");
+// Browser File objects do not expose Electron's native webUtils path API.
+// Keep importing dropped content through the DNR host when a path is absent.
+await patch(sourceSelector, "await this.selectSource(webUtils.getPathForFile(file), 'File').promise;", "await this.selectSource((file as any).path || await (window as any).etcher.importDroppedFile(file), 'File').promise;");
 // A request failure must settle the metadata promise instead of waiting forever.
 await patch('lib/shared/drive-constraints.ts', "import * as pathIsInside from 'path-is-inside';", "import pathIsInside from 'path-is-inside';");
 await patch('lib/gui/app/app.ts', "import { spawnChildAndConnect } from './modules/api';", "import { spawnChildAndConnect, requestMetadata as getMetadata } from './modules/api';");

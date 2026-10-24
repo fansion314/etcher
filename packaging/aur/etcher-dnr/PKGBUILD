@@ -1,6 +1,6 @@
 # Maintainer: Peilin Fan <peilin.fan@foxmail.com>
 pkgname=etcher-dnr
-pkgver=2.1.8
+pkgver=2.1.9
 pkgrel=1
 pkgdesc='Etcher image flasher using the shared dnr runtime'
 arch=('x86_64')
@@ -13,11 +13,11 @@ depends=('dnr>=0.4.3' 'webkit2gtk-4.1' 'gtk3' 'glib2' 'util-linux-libs' 'udisks2
 makedepends=('nodejs>=24.15' 'pnpm>=11' 'dnc>=0.4.1' 'pkgconf' 'python')
 checkdepends=('xz')
 options=('!strip' '!debug' 'staticlibs' 'libtool' '!purge' 'emptydirs')
-_commit=38f8e17e554074ad586e6efa8425c07a4ef3e13c
+_commit=dbd6aaed37c4e844f7aed978db01d9f38680eff8
 source=("etcher-${_commit}.tar.gz::https://codeload.github.com/balena-io/etcher/tar.gz/${_commit}"
         'etcher-dnr-port.tar.gz' 'etcher-dnr' 'etcher-dnr.desktop')
-sha256sums=('2ae8ab28606c54cd983c5c76f3ea6fa44bd0d538bde2d2aa72a5103f8d5af945'
-            '0532e1dd56076a668e3296a446fd5b1aee2c1af6116b308ee296be447a0bd5d1'
+sha256sums=('d55b872336c1f59de6ecda48512c91ec388fd564508b4e5fbc48d94674157b2c'
+            '1347123cb6264e6c59fa9464a12f521fd79b0430d7998e5810c54b6e380eb92b'
             'c3098db5b878a1a4624e30d9434fcbb484fbbe517c03a718d7d518a9371bf83f'
             '193c10c25951ebd21fa138cadb4726b79d21bc76444e1657caf19d7f6b0485d5')
 

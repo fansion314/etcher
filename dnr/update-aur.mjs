@@ -7,16 +7,34 @@ const repo = resolve(import.meta.dirname, '..');
 const aur = resolve(repo, 'packaging/aur/etcher-dnr');
 const binAur = resolve(repo, 'packaging/aur/etcher-dnr-bin');
 const overlay = resolve(aur, 'etcher-dnr-port.tar.gz');
-const result = spawnSync('tar', ['--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner',
-  '--exclude=node_modules', '--exclude=.build', '--exclude=*.so', '--exclude=test-native',
-  '-czf', overlay, 'dnr'], {cwd: repo, stdio: 'inherit'});
+// Use the same deterministic archive on macOS and GNU/Linux; no native build.
+const result = spawnSync('python3', ['-c', `
+import gzip, pathlib, tarfile, sys
+root = pathlib.Path(sys.argv[1])
+with open(sys.argv[2], 'wb') as raw, gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as compressed:
+    with tarfile.open(fileobj=compressed, mode='w', format=tarfile.PAX_FORMAT) as archive:
+        for path in [root / 'dnr', *sorted((root / 'dnr').rglob('*'))]:
+            relative = path.relative_to(root)
+            if any(part in ('node_modules', '.build', '__pycache__') for part in relative.parts) or path.suffix in ('.so', '.pyc') or path.name == 'test-native':
+                continue
+            info = archive.gettarinfo(str(path), arcname=str(relative))
+            info.uid = info.gid = info.mtime = 0
+            info.uname = info.gname = ''
+            if info.isfile():
+                with path.open('rb') as stream:
+                    archive.addfile(info, stream)
+            else:
+                archive.addfile(info)
+`, repo, overlay], {cwd: repo, stdio: 'inherit'});
 if (result.status) throw new Error('Cannot create AUR overlay');
 const digest = async name => createHash('sha256').update(await fs.readFile(resolve(aur, name))).digest('hex');
 let recipe = await fs.readFile(resolve(aur, 'PKGBUILD'), 'utf8');
-recipe = recipe.replace(/sha256sums=\([\s\S]*?\)/, `sha256sums=('2ae8ab28606c54cd983c5c76f3ea6fa44bd0d538bde2d2aa72a5103f8d5af945'\n            '${await digest('etcher-dnr-port.tar.gz')}'\n            '${await digest('etcher-dnr')}'\n            '${await digest('etcher-dnr.desktop')}')`);
+recipe = recipe.replace(/sha256sums=\([\s\S]*?\)/, `sha256sums=('d55b872336c1f59de6ecda48512c91ec388fd564508b4e5fbc48d94674157b2c'\n            '${await digest('etcher-dnr-port.tar.gz')}'\n            '${await digest('etcher-dnr')}'\n            '${await digest('etcher-dnr.desktop')}')`);
 await fs.writeFile(resolve(aur, 'PKGBUILD'), recipe);
+// --overlay-only is for build-free source preparation; CI regenerates metadata.
+const overlayOnly = process.argv.includes('--overlay-only');
 const isRoot = process.getuid?.() === 0;
-for (const directory of [aur, binAur]) {
+for (const directory of overlayOnly ? [] : [aur, binAur]) {
   const info = spawnSync(isRoot ? 'runuser' : 'makepkg', isRoot
     ? ['-u', 'nobody', '--', 'makepkg', '--printsrcinfo'] : ['--printsrcinfo'],
     {cwd: directory, encoding: 'utf8', env: {...process.env, ...(isRoot ? {
@@ -25,4 +43,4 @@ for (const directory of [aur, binAur]) {
   if (info.status) throw new Error(info.stderr);
   await fs.writeFile(resolve(directory, '.SRCINFO'), info.stdout);
 }
-console.log('Updated source overlay, SHA-256 checksums and both .SRCINFO files');
+console.log(overlayOnly ? 'Updated source overlay and SHA-256 checksums (metadata deferred to CI)' : 'Updated source overlay, SHA-256 checksums and both .SRCINFO files');
